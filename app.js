@@ -100,7 +100,7 @@ function renderGroup(group) {
     const body = mk('div', 'group-body');
 
     // ── 今回ゾーン（上） ──
-    body.appendChild(mk('div', 'zone-label', '今回'));
+    body.appendChild(mk('div', 'zone-label', 'ワンタイム'));
     const todoList = mk('div', 'item-list todo-list');
     todoList.dataset.groupId = group.id;
     group.todoItems.forEach(item => todoList.appendChild(renderTodoItem(group, item)));
@@ -113,7 +113,7 @@ function renderGroup(group) {
     body.appendChild(todoList);
 
     // ── 定期ゾーン（下） ──
-    body.appendChild(mk('div', 'zone-label', '定期'));
+    body.appendChild(mk('div', 'zone-label', 'キープ'));
     const regList = mk('div', 'item-list regular-list');
     regList.dataset.groupId = group.id;
     group.regularItems.forEach(item => regList.appendChild(renderRegularItem(group, item)));
