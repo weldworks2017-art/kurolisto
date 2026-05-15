@@ -265,16 +265,17 @@ header h1 {
 .add-plus {
   font-size: 18px;
   line-height: 1;
+  color: var(--blue);
+  flex-shrink: 0;
 }
 
-/* ---- INLINE ADD INPUT ---- */
-.add-input-row {
+/* ---- 常時表示の追加入力欄 ---- */
+.persistent-add-row {
   border-top: 1px solid var(--sep);
-  padding: 10px 14px;
   gap: 8px;
 }
 
-.add-input {
+.persistent-input {
   flex: 1;
   border: none;
   outline: none;
@@ -282,36 +283,26 @@ header h1 {
   font-family: inherit;
   background: transparent;
   color: var(--text);
+  padding: 0;
+  min-width: 0;
 }
 
-.add-input::placeholder {
+.persistent-input::placeholder {
   color: var(--sub);
 }
 
-.cancel-add-btn {
-  background: none;
-  border: none;
-  color: var(--sub);
-  font-size: 18px;
-  cursor: pointer;
-  padding: 2px 4px;
-  line-height: 1;
-}
-
-/* ---- COMPLETE BUTTON ---- */
-.complete-btn {
-  display: block;
-  width: calc(100% - 28px);
-  margin: 10px 14px;
-  padding: 12px;
+/* ---- HEADER DONE BUTTON ---- */
+.header-done-btn {
   background: var(--green);
   color: #fff;
   border: none;
-  border-radius: 10px;
-  font-size: 15px;
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   font-family: inherit;
+  white-space: nowrap;
 }
 
 /* ---- EDIT MODE CONTROLS ---- */

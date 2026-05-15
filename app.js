@@ -4,7 +4,6 @@ const KEY = 'kurolisto_v1';
 
 let state = loadState();
 let editMode = false;
-let pendingAdd = null; // { zone: 'waiting'|'regular'|'todo', groupId? }
 
 const sortableInstances = [];
 
@@ -24,6 +23,10 @@ function save() {
 
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+}
+
+function isInTodo(group, regularItemId) {
+  return group.todoItems.some(t => t.refId === regularItemId);
 }
 
 // =================== RENDER ===================
@@ -60,18 +63,14 @@ function renderWaitingSection() {
   const sec = mk('section', 'section waiting-section');
 
   const hdr = mk('div', 'section-header');
-  if (editMode) {
-    hdr.appendChild(mk('span', 'drag-handle', '⠿'));
-  }
+  if (editMode) hdr.appendChild(mk('span', 'drag-handle', '⠿'));
   hdr.appendChild(mk('span', 'section-title', '返事待ち'));
   if (!editMode) {
     const meta = mk('div', 'section-meta');
+    if (state.waitingList.length > 0) meta.appendChild(mk('span', 'badge', String(state.waitingList.length)));
     meta.appendChild(mk('span', 'chevron' + (state.waitingCollapsed ? '' : ' open'), '›'));
     hdr.appendChild(meta);
-    hdr.addEventListener('click', () => {
-      state.waitingCollapsed = !state.waitingCollapsed;
-      save(); render();
-    });
+    hdr.addEventListener('click', () => { state.waitingCollapsed = !state.waitingCollapsed; save(); render(); });
   }
   sec.appendChild(hdr);
 
@@ -81,14 +80,11 @@ function renderWaitingSection() {
 
     state.waitingList.forEach((item, i) => list.appendChild(renderWaitingItem(item, i)));
 
-    if (pendingAdd?.zone === 'waiting') {
-      list.appendChild(renderAddInput('waiting', null));
-    } else {
-      const addRow = mk('div', 'add-row');
-      addRow.innerHTML = '<span class="add-plus">＋</span><span>追加</span>';
-      addRow.addEventListener('click', () => { pendingAdd = { zone: 'waiting' }; render(); focusInput(); });
-      list.appendChild(addRow);
-    }
+    // 常時表示の追加入力欄
+    list.appendChild(renderPersistentAdd('返事待ちを追加...', text => {
+      state.waitingList.push({ id: uid(), text });
+      save(); render();
+    }));
 
     sec.appendChild(list);
   }
@@ -153,8 +149,19 @@ function renderGroup(group) {
   } else {
     hdr.appendChild(mk('span', 'section-title', group.name));
     const meta = mk('div', 'section-meta');
-    const n = group.regularItems.filter(i => i.active).length + group.todoItems.length;
-    if (n > 0) meta.appendChild(mk('span', 'badge', String(n)));
+
+    // 完了ボタン（ヘッダー右側）
+    if (group.todoItems.length > 0) {
+      meta.appendChild(mk('span', 'badge', String(group.todoItems.length)));
+      const doneBtn = mk('button', 'header-done-btn', '完了');
+      doneBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        group.todoItems = [];
+        save(); render();
+      });
+      meta.appendChild(doneBtn);
+    }
+
     meta.appendChild(mk('span', 'chevron' + (group.collapsed ? '' : ' open'), '›'));
     hdr.appendChild(meta);
     hdr.addEventListener('click', () => { group.collapsed = !group.collapsed; save(); render(); });
@@ -172,14 +179,15 @@ function renderGroup(group) {
     group.regularItems.forEach(item => regList.appendChild(renderRegularItem(group, item)));
 
     if (editMode) {
-      if (pendingAdd?.zone === 'regular' && pendingAdd.groupId === group.id) {
-        regList.appendChild(renderAddInput('regular', group.id));
-      } else {
-        const add = mk('div', 'add-row');
-        add.innerHTML = '<span class="add-plus">＋</span><span>定期アイテムを追加</span>';
-        add.addEventListener('click', () => { pendingAdd = { zone: 'regular', groupId: group.id }; render(); focusInput(); });
-        regList.appendChild(add);
-      }
+      const add = mk('div', 'add-row');
+      add.innerHTML = '<span class="add-plus">＋</span><span>定期アイテムを追加</span>';
+      add.addEventListener('click', () => {
+        const name = prompt('定期アイテム名：');
+        if (!name?.trim()) return;
+        group.regularItems.push({ id: uid(), text: name.trim() });
+        save(); render();
+      });
+      regList.appendChild(add);
     }
     body.appendChild(regList);
 
@@ -190,26 +198,14 @@ function renderGroup(group) {
 
     group.todoItems.forEach(item => todoList.appendChild(renderTodoItem(group, item)));
 
-    if (pendingAdd?.zone === 'todo' && pendingAdd.groupId === group.id) {
-      todoList.appendChild(renderAddInput('todo', group.id));
-    } else if (!editMode) {
-      const add = mk('div', 'add-row');
-      add.innerHTML = '<span class="add-plus">＋</span><span>追加</span>';
-      add.addEventListener('click', () => { pendingAdd = { zone: 'todo', groupId: group.id }; render(); focusInput(); });
-      todoList.appendChild(add);
+    // 常時表示の追加入力欄（編集モード外のみ）
+    if (!editMode) {
+      todoList.appendChild(renderPersistentAdd('追加...', text => {
+        group.todoItems.push({ id: uid(), text });
+        save(); render();
+      }));
     }
     body.appendChild(todoList);
-
-    // 買い物完了
-    if (!editMode && (group.regularItems.some(i => i.active) || group.todoItems.length > 0)) {
-      const btn = mk('button', 'complete-btn', '✓ 買い物完了');
-      btn.addEventListener('click', () => {
-        group.regularItems.forEach(i => i.active = false);
-        group.todoItems = [];
-        save(); render();
-      });
-      body.appendChild(btn);
-    }
 
     sec.appendChild(body);
   }
@@ -228,10 +224,12 @@ function renderRegularItem(group, item) {
     const del = mk('button', 'del-btn', '−');
     del.addEventListener('click', () => {
       group.regularItems = group.regularItems.filter(i => i.id !== item.id);
+      // 今回リストにあれば同時に削除
+      group.todoItems = group.todoItems.filter(t => t.refId !== item.id);
       save(); render();
     });
     row.appendChild(del);
-    const dot = mk('div', 'toggle-dot' + (item.active ? ' active' : ''));
+    const dot = mk('div', 'toggle-dot');
     row.appendChild(dot);
     const inp = document.createElement('input');
     inp.className = 'inline-input item-text';
@@ -239,10 +237,19 @@ function renderRegularItem(group, item) {
     inp.addEventListener('change', e => { item.text = e.target.value; save(); });
     row.appendChild(inp);
   } else {
-    const dot = mk('div', 'toggle-dot' + (item.active ? ' active' : ''));
-    dot.addEventListener('click', () => { item.active = !item.active; save(); render(); });
+    // ドットタップ → 今回ゾーンに追加/削除
+    const inTodo = isInTodo(group, item.id);
+    const dot = mk('div', 'toggle-dot' + (inTodo ? ' active' : ''));
+    dot.addEventListener('click', () => {
+      if (inTodo) {
+        group.todoItems = group.todoItems.filter(t => t.refId !== item.id);
+      } else {
+        group.todoItems.push({ id: uid(), text: item.text, refId: item.id });
+      }
+      save(); render();
+    });
     row.appendChild(dot);
-    row.appendChild(mk('span', 'item-text' + (item.active ? '' : ' dimmed'), item.text));
+    row.appendChild(mk('span', 'item-text' + (inTodo ? '' : ' dimmed'), item.text));
   }
 
   wrap.appendChild(row);
@@ -254,6 +261,7 @@ function renderTodoItem(group, item) {
   wrap.dataset.zone = 'todo';
   wrap.dataset.id = item.id;
   wrap.dataset.groupId = group.id;
+  wrap.dataset.refId = item.refId || '';
 
   wrap.appendChild(mk('div', 'delete-bg', '削除'));
 
@@ -263,54 +271,24 @@ function renderTodoItem(group, item) {
   return wrap;
 }
 
-// ---- Inline Add Input ----
+// ---- 常時表示の追加入力 ----
 
-function renderAddInput(zone, groupId) {
-  const row = mk('div', 'item-row add-input-row');
+function renderPersistentAdd(placeholder, onAdd) {
+  const row = mk('div', 'item-row persistent-add-row');
+  row.appendChild(mk('span', 'add-plus', '＋'));
   const inp = document.createElement('input');
-  inp.className = 'add-input';
-  inp.placeholder =
-    zone === 'waiting' ? '返事待ちを入力...' :
-    zone === 'regular' ? '定期アイテム名...' :
-    'アイテム名...';
-
+  inp.className = 'persistent-input';
+  inp.placeholder = placeholder;
   inp.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); commitAdd(zone, groupId, inp.value); }
-    if (e.key === 'Escape') { pendingAdd = null; render(); }
-  });
-  inp.addEventListener('blur', () => commitAdd(zone, groupId, inp.value));
-
-  const cancel = mk('button', 'cancel-add-btn', '✕');
-  cancel.addEventListener('mousedown', e => { e.preventDefault(); pendingAdd = null; render(); });
-
-  row.appendChild(inp);
-  row.appendChild(cancel);
-  return row;
-}
-
-function commitAdd(zone, groupId, rawText) {
-  const text = rawText?.trim();
-  pendingAdd = null;
-  if (text) {
-    if (zone === 'waiting') {
-      state.waitingList.push({ id: uid(), text });
-    } else if (zone === 'regular') {
-      const g = state.groups.find(g => g.id === groupId);
-      if (g) g.regularItems.push({ id: uid(), text, active: false });
-    } else if (zone === 'todo') {
-      const g = state.groups.find(g => g.id === groupId);
-      if (g) g.todoItems.push({ id: uid(), text });
+    if (e.key === 'Enter' && inp.value.trim()) {
+      onAdd(inp.value.trim());
+      inp.value = '';
+      // フォーカスを維持して連続入力可能に
+      e.preventDefault();
     }
-    save();
-  }
-  render();
-}
-
-function focusInput() {
-  requestAnimationFrame(() => {
-    const inp = document.querySelector('.add-input');
-    if (inp) inp.focus();
   });
+  row.appendChild(inp);
+  return row;
 }
 
 function addGroup() {
@@ -325,12 +303,8 @@ function addGroup() {
 function afterRender() {
   sortableInstances.forEach(s => { try { s.destroy(); } catch {} });
   sortableInstances.length = 0;
-
-  if (editMode) {
-    initSortable();
-  } else {
-    initSwipe();
-  }
+  if (editMode) initSortable();
+  else initSwipe();
 }
 
 // =================== SORTABLE ===================
@@ -338,17 +312,16 @@ function afterRender() {
 function initSortable() {
   if (typeof Sortable === 'undefined') return;
 
-  const opts = (onEndFn) => ({
+  const opts = onEndFn => ({
     handle: '.sortable-handle',
     animation: 150,
     ghostClass: 'sortable-ghost',
     dragClass: 'sortable-drag',
-    filter: '.add-row, .add-input-row',
+    filter: '.add-row, .persistent-add-row',
     preventOnFilter: false,
     onEnd: onEndFn
   });
 
-  // Groups
   const groupsList = document.getElementById('groups-list');
   if (groupsList) {
     sortableInstances.push(new Sortable(groupsList, opts(e => {
@@ -358,17 +331,15 @@ function initSortable() {
     })));
   }
 
-  // Waiting list
   const waitingList = document.getElementById('waiting-list');
   if (waitingList) {
     sortableInstances.push(new Sortable(waitingList, opts(e => {
       const [moved] = state.waitingList.splice(e.oldIndex, 1);
       state.waitingList.splice(e.newIndex, 0, moved);
-      save(); render(); // re-number
+      save(); render();
     })));
   }
 
-  // Regular items per group
   document.querySelectorAll('.regular-list').forEach(list => {
     const gid = list.dataset.groupId;
     const group = state.groups.find(g => g.id === gid);
@@ -391,12 +362,9 @@ function initSwipe() {
     let startX = 0, curX = 0, swiping = false;
 
     function pointerStart(clientX) {
-      startX = clientX;
-      curX = 0;
-      swiping = true;
+      startX = clientX; curX = 0; swiping = true;
       row.style.transition = 'none';
     }
-
     function pointerMove(clientX) {
       if (!swiping) return;
       curX = Math.min(0, clientX - startX);
@@ -404,16 +372,12 @@ function initSwipe() {
       const bg = wrap.querySelector('.delete-bg');
       if (bg) bg.style.opacity = String(Math.min(1, Math.abs(curX) / 80));
     }
-
     function pointerEnd() {
       if (!swiping) return;
       swiping = false;
       row.style.transition = 'transform .2s';
-
-      const zone    = wrap.dataset.zone;
-      const id      = wrap.dataset.id;
-      const groupId = wrap.dataset.groupId;
-      const bg      = wrap.querySelector('.delete-bg');
+      const zone = wrap.dataset.zone, id = wrap.dataset.id, groupId = wrap.dataset.groupId;
+      const bg = wrap.querySelector('.delete-bg');
 
       if (curX < -180) {
         slideDelete(wrap, () => doDelete(zone, id, groupId));
@@ -439,17 +403,14 @@ function initSwipe() {
       }
     }
 
-    // Touch
     row.addEventListener('touchstart', e => pointerStart(e.touches[0].clientX), { passive: true });
     row.addEventListener('touchmove',  e => pointerMove(e.touches[0].clientX),  { passive: true });
     row.addEventListener('touchend',   pointerEnd);
-
-    // Mouse (PC)
     row.addEventListener('mousedown', e => {
       if (e.button !== 0) return;
       pointerStart(e.clientX);
       const onMove = e2 => pointerMove(e2.clientX);
-      const onUp   = () => { pointerEnd(); document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+      const onUp = () => { pointerEnd(); document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
     });
@@ -457,9 +418,8 @@ function initSwipe() {
 }
 
 function slideDelete(wrap, callback) {
-  const h = wrap.offsetHeight;
   wrap.style.overflow = 'hidden';
-  wrap.style.height = h + 'px';
+  wrap.style.height = wrap.offsetHeight + 'px';
   requestAnimationFrame(() => {
     wrap.style.transition = 'height .2s ease, opacity .2s ease';
     wrap.style.height = '0';
@@ -490,7 +450,6 @@ function mk(tag, cls, text) {
 // =================== BOOT ===================
 
 document.getElementById('editBtn').addEventListener('click', () => {
-  pendingAdd = null;
   editMode = !editMode;
   render();
 });
