@@ -82,13 +82,6 @@ function renderGroup(group) {
     const meta = mk('div', 'section-meta');
     if (group.todoItems.length > 0) {
       meta.appendChild(mk('span', 'badge', String(group.todoItems.length)));
-      const doneBtn = mk('button', 'header-done-btn', '完了');
-      doneBtn.addEventListener('click', e => {
-        e.stopPropagation();
-        group.todoItems = [];
-        save(); render();
-      });
-      meta.appendChild(doneBtn);
     }
     meta.appendChild(mk('span', 'chevron' + (group.collapsed ? '' : ' open'), '›'));
     hdr.appendChild(meta);
@@ -99,8 +92,8 @@ function renderGroup(group) {
   if (!group.collapsed || editMode) {
     const body = mk('div', 'group-body');
 
-    // ── 今回ゾーン（上） ──
-    body.appendChild(mk('div', 'zone-label', 'ワンタイム'));
+    // ── 買うものゾーン（上） ──
+    body.appendChild(mk('div', 'zone-label', '買うもの'));
     const todoList = mk('div', 'item-list todo-list');
     todoList.dataset.groupId = group.id;
     group.todoItems.forEach(item => todoList.appendChild(renderTodoItem(group, item)));
@@ -112,16 +105,31 @@ function renderGroup(group) {
     }
     body.appendChild(todoList);
 
-    // ── 定期ゾーン（下） ──
-    body.appendChild(mk('div', 'zone-label', 'いつもの'));
+    // ── いつものゾーン（下） ──
+    const itsZoneRow = mk('div', 'zone-label-row');
+    itsZoneRow.appendChild(mk('span', 'zone-label-text', 'いつもの'));
+    if (!editMode && group.regularItems.length > 0) {
+      const allAddBtn = mk('button', 'all-add-btn', '全部追加');
+      allAddBtn.addEventListener('click', () => {
+        group.regularItems.forEach(item => {
+          if (!isInTodo(group, item.id)) {
+            group.todoItems.push({ id: uid(), text: item.text, refId: item.id });
+          }
+        });
+        save(); render();
+      });
+      itsZoneRow.appendChild(allAddBtn);
+    }
+    body.appendChild(itsZoneRow);
+
     const regList = mk('div', 'item-list regular-list');
     regList.dataset.groupId = group.id;
     group.regularItems.forEach(item => regList.appendChild(renderRegularItem(group, item)));
     if (editMode) {
       const add = mk('div', 'add-row');
-      add.innerHTML = '<span class="add-plus">＋</span><span>定期アイテムを追加</span>';
+      add.innerHTML = '<span class="add-plus">＋</span><span>追加</span>';
       add.addEventListener('click', () => {
-        const name = prompt('定期アイテム名：');
+        const name = prompt('アイテム名：');
         if (!name?.trim()) return;
         group.regularItems.push({ id: uid(), text: name.trim() });
         save(); render();
@@ -139,7 +147,7 @@ function renderGroup(group) {
 function renderRegularItem(group, item) {
   const wrap = mk('div', 'item-wrap');
   wrap.dataset.id = item.id;
-  const row = mk('div', 'item-row');
+  const row = mk('div', 'item-row regular-row');
 
   if (editMode) {
     row.appendChild(mk('span', 'drag-handle sortable-handle', '⠿'));
@@ -158,17 +166,18 @@ function renderRegularItem(group, item) {
     row.appendChild(inp);
   } else {
     const inTodo = isInTodo(group, item.id);
-    const dot = mk('div', 'toggle-dot' + (inTodo ? ' active' : ''));
-    dot.addEventListener('click', () => {
-      if (inTodo) {
+    row.appendChild(mk('div', 'toggle-dot' + (inTodo ? ' active' : '')));
+    row.appendChild(mk('span', 'item-text' + (inTodo ? ' added' : ''), item.text));
+    // 行全体タップ
+    row.addEventListener('click', () => {
+      const nowIn = isInTodo(group, item.id);
+      if (nowIn) {
         group.todoItems = group.todoItems.filter(t => t.refId !== item.id);
       } else {
         group.todoItems.push({ id: uid(), text: item.text, refId: item.id });
       }
       save(); render();
     });
-    row.appendChild(dot);
-    row.appendChild(mk('span', 'item-text' + (inTodo ? '' : ' dimmed'), item.text));
   }
 
   wrap.appendChild(row);
