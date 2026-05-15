@@ -77,15 +77,11 @@ function renderWaitingSection() {
   if (!state.waitingCollapsed || editMode) {
     const list = mk('div', 'item-list');
     list.id = 'waiting-list';
-
     state.waitingList.forEach((item, i) => list.appendChild(renderWaitingItem(item, i)));
-
-    // 常時表示の追加入力欄
     list.appendChild(renderPersistentAdd('返事待ちを追加...', text => {
       state.waitingList.push({ id: uid(), text });
       save(); render();
     }));
-
     sec.appendChild(list);
   }
 
@@ -100,7 +96,6 @@ function renderWaitingItem(item, index) {
   if (!editMode) wrap.appendChild(mk('div', 'delete-bg', '削除'));
 
   const row = mk('div', 'item-row');
-
   if (editMode) {
     row.appendChild(mk('span', 'drag-handle sortable-handle', '⠿'));
     const del = mk('button', 'del-btn', '−');
@@ -149,8 +144,6 @@ function renderGroup(group) {
   } else {
     hdr.appendChild(mk('span', 'section-title', group.name));
     const meta = mk('div', 'section-meta');
-
-    // 完了ボタン（ヘッダー右側）
     if (group.todoItems.length > 0) {
       meta.appendChild(mk('span', 'badge', String(group.todoItems.length)));
       const doneBtn = mk('button', 'header-done-btn', '完了');
@@ -161,7 +154,6 @@ function renderGroup(group) {
       });
       meta.appendChild(doneBtn);
     }
-
     meta.appendChild(mk('span', 'chevron' + (group.collapsed ? '' : ' open'), '›'));
     hdr.appendChild(meta);
     hdr.addEventListener('click', () => { group.collapsed = !group.collapsed; save(); render(); });
@@ -171,13 +163,24 @@ function renderGroup(group) {
   if (!group.collapsed || editMode) {
     const body = mk('div', 'group-body');
 
-    // 定期ゾーン
+    // ── ワンタイムゾーン（上） ──
+    body.appendChild(mk('div', 'zone-label', 'ワンタイム'));
+    const todoList = mk('div', 'item-list todo-list');
+    todoList.dataset.groupId = group.id;
+    group.todoItems.forEach(item => todoList.appendChild(renderTodoItem(group, item)));
+    if (!editMode) {
+      todoList.appendChild(renderPersistentAdd('追加...', text => {
+        group.todoItems.push({ id: uid(), text });
+        save(); render();
+      }));
+    }
+    body.appendChild(todoList);
+
+    // ── 定期ゾーン（下） ──
     body.appendChild(mk('div', 'zone-label', '定期'));
     const regList = mk('div', 'item-list regular-list');
     regList.dataset.groupId = group.id;
-
     group.regularItems.forEach(item => regList.appendChild(renderRegularItem(group, item)));
-
     if (editMode) {
       const add = mk('div', 'add-row');
       add.innerHTML = '<span class="add-plus">＋</span><span>定期アイテムを追加</span>';
@@ -191,22 +194,6 @@ function renderGroup(group) {
     }
     body.appendChild(regList);
 
-    // 今回ゾーン
-    body.appendChild(mk('div', 'zone-label', '今回'));
-    const todoList = mk('div', 'item-list todo-list');
-    todoList.dataset.groupId = group.id;
-
-    group.todoItems.forEach(item => todoList.appendChild(renderTodoItem(group, item)));
-
-    // 常時表示の追加入力欄（編集モード外のみ）
-    if (!editMode) {
-      todoList.appendChild(renderPersistentAdd('追加...', text => {
-        group.todoItems.push({ id: uid(), text });
-        save(); render();
-      }));
-    }
-    body.appendChild(todoList);
-
     sec.appendChild(body);
   }
 
@@ -216,7 +203,6 @@ function renderGroup(group) {
 function renderRegularItem(group, item) {
   const wrap = mk('div', 'item-wrap');
   wrap.dataset.id = item.id;
-
   const row = mk('div', 'item-row');
 
   if (editMode) {
@@ -224,20 +210,17 @@ function renderRegularItem(group, item) {
     const del = mk('button', 'del-btn', '−');
     del.addEventListener('click', () => {
       group.regularItems = group.regularItems.filter(i => i.id !== item.id);
-      // 今回リストにあれば同時に削除
       group.todoItems = group.todoItems.filter(t => t.refId !== item.id);
       save(); render();
     });
     row.appendChild(del);
-    const dot = mk('div', 'toggle-dot');
-    row.appendChild(dot);
+    row.appendChild(mk('div', 'toggle-dot'));
     const inp = document.createElement('input');
     inp.className = 'inline-input item-text';
     inp.value = item.text;
     inp.addEventListener('change', e => { item.text = e.target.value; save(); });
     row.appendChild(inp);
   } else {
-    // ドットタップ → 今回ゾーンに追加/削除
     const inTodo = isInTodo(group, item.id);
     const dot = mk('div', 'toggle-dot' + (inTodo ? ' active' : ''));
     dot.addEventListener('click', () => {
@@ -261,10 +244,9 @@ function renderTodoItem(group, item) {
   wrap.dataset.zone = 'todo';
   wrap.dataset.id = item.id;
   wrap.dataset.groupId = group.id;
-  wrap.dataset.refId = item.refId || '';
+  if (item.refId) wrap.dataset.refId = item.refId;
 
   wrap.appendChild(mk('div', 'delete-bg', '削除'));
-
   const row = mk('div', 'item-row');
   row.appendChild(mk('span', 'item-text', item.text));
   wrap.appendChild(row);
@@ -281,10 +263,9 @@ function renderPersistentAdd(placeholder, onAdd) {
   inp.placeholder = placeholder;
   inp.addEventListener('keydown', e => {
     if (e.key === 'Enter' && inp.value.trim()) {
+      e.preventDefault();
       onAdd(inp.value.trim());
       inp.value = '';
-      // フォーカスを維持して連続入力可能に
-      e.preventDefault();
     }
   });
   row.appendChild(inp);
@@ -354,14 +335,40 @@ function initSortable() {
 
 // =================== SWIPE DELETE ===================
 
+function closeAllSwiped(exceptWrap) {
+  document.querySelectorAll('.item-wrap.swiped-open').forEach(w => {
+    if (w === exceptWrap) return;
+    const r = w.querySelector('.item-row');
+    const b = w.querySelector('.delete-bg');
+    if (r) { r.style.transition = 'transform .2s'; r.style.transform = ''; }
+    if (b) b.style.opacity = '0';
+    w.classList.remove('swiped-open');
+  });
+}
+
 function initSwipe() {
   document.querySelectorAll('.item-wrap[data-zone]').forEach(wrap => {
     const row = wrap.querySelector('.item-row');
-    if (!row) return;
+    const bg  = wrap.querySelector('.delete-bg');
+    if (!row || !bg) return;
+
+    const zone    = wrap.dataset.zone;
+    const id      = wrap.dataset.id;
+    const groupId = wrap.dataset.groupId;
+
+    // 削除ボタンタップ
+    const execDelete = (e) => {
+      e.stopPropagation();
+      wrap.classList.remove('swiped-open');
+      slideDelete(wrap, () => doDelete(zone, id, groupId));
+    };
+    bg.addEventListener('touchend', execDelete, { passive: false });
+    bg.addEventListener('click',    execDelete);
 
     let startX = 0, curX = 0, swiping = false;
 
     function pointerStart(clientX) {
+      closeAllSwiped(wrap);
       startX = clientX; curX = 0; swiping = true;
       row.style.transition = 'none';
     }
@@ -369,37 +376,22 @@ function initSwipe() {
       if (!swiping) return;
       curX = Math.min(0, clientX - startX);
       row.style.transform = `translateX(${curX}px)`;
-      const bg = wrap.querySelector('.delete-bg');
-      if (bg) bg.style.opacity = String(Math.min(1, Math.abs(curX) / 80));
+      bg.style.opacity = String(Math.min(1, Math.abs(curX) / 80));
     }
     function pointerEnd() {
       if (!swiping) return;
       swiping = false;
       row.style.transition = 'transform .2s';
-      const zone = wrap.dataset.zone, id = wrap.dataset.id, groupId = wrap.dataset.groupId;
-      const bg = wrap.querySelector('.delete-bg');
-
       if (curX < -180) {
+        wrap.classList.remove('swiped-open');
         slideDelete(wrap, () => doDelete(zone, id, groupId));
       } else if (curX < -70) {
         row.style.transform = 'translateX(-90px)';
-        if (bg) {
-          bg.style.opacity = '1';
-          bg.onclick = () => slideDelete(wrap, () => doDelete(zone, id, groupId));
-        }
-        setTimeout(() => {
-          const dismiss = () => {
-            row.style.transform = '';
-            if (bg) bg.style.opacity = '0';
-            document.removeEventListener('touchstart', dismiss);
-            document.removeEventListener('mousedown', dismiss);
-          };
-          document.addEventListener('touchstart', dismiss, { once: true });
-          document.addEventListener('mousedown', dismiss, { once: true });
-        }, 50);
+        bg.style.opacity = '1';
+        wrap.classList.add('swiped-open');
       } else {
         row.style.transform = '';
-        if (bg) bg.style.opacity = '0';
+        bg.style.opacity = '0';
       }
     }
 
@@ -410,18 +402,23 @@ function initSwipe() {
       if (e.button !== 0) return;
       pointerStart(e.clientX);
       const onMove = e2 => pointerMove(e2.clientX);
-      const onUp = () => { pointerEnd(); document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+      const onUp   = () => { pointerEnd(); document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
     });
   });
+
+  // 外タップで閉じる
+  document.addEventListener('touchstart', e => {
+    if (!e.target.closest('.item-wrap.swiped-open')) closeAllSwiped(null);
+  }, { passive: true });
 }
 
 function slideDelete(wrap, callback) {
   wrap.style.overflow = 'hidden';
   wrap.style.height = wrap.offsetHeight + 'px';
   requestAnimationFrame(() => {
-    wrap.style.transition = 'height .2s ease, opacity .2s ease';
+    wrap.style.transition = 'height .2s ease, opacity .15s ease';
     wrap.style.height = '0';
     wrap.style.opacity = '0';
   });
