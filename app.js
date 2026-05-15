@@ -14,7 +14,7 @@ function loadState() {
     const s = JSON.parse(localStorage.getItem(KEY));
     if (s && Array.isArray(s.groups)) return s;
   } catch {}
-  return { waitingCollapsed: false, waitingList: [], groups: [] };
+  return { groups: [] };
 }
 
 function save() {
@@ -39,8 +39,6 @@ function render() {
   editBtn.textContent = editMode ? '完了' : '編集';
   editBtn.classList.toggle('editing', editMode);
 
-  main.appendChild(renderWaitingSection());
-
   const groupsEl = mk('div', '');
   groupsEl.id = 'groups-list';
   state.groups.forEach(g => groupsEl.appendChild(renderGroup(g)));
@@ -55,68 +53,6 @@ function render() {
   }
 
   afterRender();
-}
-
-// ---- Waiting Section ----
-
-function renderWaitingSection() {
-  const sec = mk('section', 'section waiting-section');
-
-  const hdr = mk('div', 'section-header');
-  if (editMode) hdr.appendChild(mk('span', 'drag-handle', '⠿'));
-  hdr.appendChild(mk('span', 'section-title', '返事待ち'));
-  if (!editMode) {
-    const meta = mk('div', 'section-meta');
-    if (state.waitingList.length > 0) meta.appendChild(mk('span', 'badge', String(state.waitingList.length)));
-    meta.appendChild(mk('span', 'chevron' + (state.waitingCollapsed ? '' : ' open'), '›'));
-    hdr.appendChild(meta);
-    hdr.addEventListener('click', () => { state.waitingCollapsed = !state.waitingCollapsed; save(); render(); });
-  }
-  sec.appendChild(hdr);
-
-  if (!state.waitingCollapsed || editMode) {
-    const list = mk('div', 'item-list');
-    list.id = 'waiting-list';
-    state.waitingList.forEach((item, i) => list.appendChild(renderWaitingItem(item, i)));
-    list.appendChild(renderPersistentAdd('返事待ちを追加...', text => {
-      state.waitingList.push({ id: uid(), text });
-      save(); render();
-    }));
-    sec.appendChild(list);
-  }
-
-  return sec;
-}
-
-function renderWaitingItem(item, index) {
-  const wrap = mk('div', 'item-wrap');
-  wrap.dataset.zone = 'waiting';
-  wrap.dataset.id = item.id;
-
-  if (!editMode) wrap.appendChild(mk('div', 'delete-bg', '削除'));
-
-  const row = mk('div', 'item-row');
-  if (editMode) {
-    row.appendChild(mk('span', 'drag-handle sortable-handle', '⠿'));
-    const del = mk('button', 'del-btn', '−');
-    del.addEventListener('click', () => {
-      state.waitingList = state.waitingList.filter(i => i.id !== item.id);
-      save(); render();
-    });
-    row.appendChild(del);
-    row.appendChild(mk('span', 'waiting-num', `${index + 1}.`));
-    const inp = document.createElement('input');
-    inp.className = 'inline-input item-text';
-    inp.value = item.text;
-    inp.addEventListener('change', e => { item.text = e.target.value; save(); });
-    row.appendChild(inp);
-  } else {
-    row.appendChild(mk('span', 'waiting-num', `${index + 1}.`));
-    row.appendChild(mk('span', 'item-text', item.text));
-  }
-
-  wrap.appendChild(row);
-  return wrap;
 }
 
 // ---- Group ----
@@ -163,8 +99,8 @@ function renderGroup(group) {
   if (!group.collapsed || editMode) {
     const body = mk('div', 'group-body');
 
-    // ── ワンタイムゾーン（上） ──
-    body.appendChild(mk('div', 'zone-label', 'ワンタイム'));
+    // ── 今回ゾーン（上） ──
+    body.appendChild(mk('div', 'zone-label', '今回'));
     const todoList = mk('div', 'item-list todo-list');
     todoList.dataset.groupId = group.id;
     group.todoItems.forEach(item => todoList.appendChild(renderTodoItem(group, item)));
@@ -312,15 +248,6 @@ function initSortable() {
     })));
   }
 
-  const waitingList = document.getElementById('waiting-list');
-  if (waitingList) {
-    sortableInstances.push(new Sortable(waitingList, opts(e => {
-      const [moved] = state.waitingList.splice(e.oldIndex, 1);
-      state.waitingList.splice(e.newIndex, 0, moved);
-      save(); render();
-    })));
-  }
-
   document.querySelectorAll('.regular-list').forEach(list => {
     const gid = list.dataset.groupId;
     const group = state.groups.find(g => g.id === gid);
@@ -356,8 +283,7 @@ function initSwipe() {
     const id      = wrap.dataset.id;
     const groupId = wrap.dataset.groupId;
 
-    // 削除ボタンタップ
-    const execDelete = (e) => {
+    const execDelete = e => {
       e.stopPropagation();
       wrap.classList.remove('swiped-open');
       slideDelete(wrap, () => doDelete(zone, id, groupId));
@@ -408,7 +334,6 @@ function initSwipe() {
     });
   });
 
-  // 外タップで閉じる
   document.addEventListener('touchstart', e => {
     if (!e.target.closest('.item-wrap.swiped-open')) closeAllSwiped(null);
   }, { passive: true });
@@ -426,9 +351,7 @@ function slideDelete(wrap, callback) {
 }
 
 function doDelete(zone, id, groupId) {
-  if (zone === 'waiting') {
-    state.waitingList = state.waitingList.filter(i => i.id !== id);
-  } else if (zone === 'todo') {
+  if (zone === 'todo') {
     const g = state.groups.find(g => g.id === groupId);
     if (g) g.todoItems = g.todoItems.filter(i => i.id !== id);
   }
