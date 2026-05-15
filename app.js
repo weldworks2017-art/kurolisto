@@ -101,7 +101,7 @@ function renderGroup(group) {
       todoList.appendChild(renderPersistentAdd('追加...', text => {
         group.todoItems.push({ id: uid(), text });
         save(); render();
-      }));
+      }, 'todo-' + group.id));
     }
     body.appendChild(todoList);
 
@@ -200,8 +200,9 @@ function renderTodoItem(group, item) {
 
 // ---- 常時表示の追加入力 ----
 
-function renderPersistentAdd(placeholder, onAdd) {
+function renderPersistentAdd(placeholder, onAdd, key) {
   const row = mk('div', 'item-row persistent-add-row');
+  row.dataset.addKey = key;
   row.appendChild(mk('span', 'add-plus', '＋'));
   const inp = document.createElement('input');
   inp.className = 'persistent-input';
@@ -209,8 +210,10 @@ function renderPersistentAdd(placeholder, onAdd) {
   inp.addEventListener('keydown', e => {
     if (e.key === 'Enter' && inp.value.trim()) {
       e.preventDefault();
-      onAdd(inp.value.trim());
-      inp.value = '';
+      onAdd(inp.value.trim()); // 内部でrender()が呼ばれる
+      // render()後に同じ入力欄を再フォーカス（キーボードを閉じない）
+      const newInp = document.querySelector(`.persistent-add-row[data-add-key="${key}"] .persistent-input`);
+      if (newInp) newInp.focus();
     }
   });
   row.appendChild(inp);
