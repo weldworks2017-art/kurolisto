@@ -113,7 +113,7 @@ function renderGroup(group) {
     body.appendChild(todoList);
 
     // ── 定期ゾーン（下） ──
-    body.appendChild(mk('div', 'zone-label', 'キープ'));
+    body.appendChild(mk('div', 'zone-label', 'いつもの'));
     const regList = mk('div', 'item-list regular-list');
     regList.dataset.groupId = group.id;
     group.regularItems.forEach(item => regList.appendChild(renderRegularItem(group, item)));
